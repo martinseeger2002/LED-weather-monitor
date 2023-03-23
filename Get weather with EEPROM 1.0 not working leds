@@ -1,0 +1,227 @@
+#include <ESP8266WiFi.h>
+#include <ESP8266WebServer.h>
+#include <WiFiClientSecure.h>
+#include <ESP8266HTTPClient.h>
+#include <EEPROM.h>
+#include <ArduinoJson.h>
+#include <FastLED.h>
+
+
+String storedSsid = "";
+String storedPassword = "";
+String storedLatitude = "";
+String storedLongitude = "";
+String storedApiKey = "";
+
+const int requestInterval = 30000; // in milliseconds
+bool shouldFetchWeatherData = false;
+float globalTemperature = 0;
+int numLedsOn = 0;
+const char *AP_SSID = "weather station";
+const char *AP_PASS = "12345678";
+
+ESP8266WebServer server(80);
+
+const int eepromSize = 512;
+const int ssidOffset = 0;
+const int passOffset = 64;
+const int latOffset = 128;
+const int lonOffset = 192;
+const int apiKeyOffset = 256;
+
+const int BAUD_RATE = 9600;
+
+void handleRoot();
+void handleConnect();
+void setEEPROMString(int offset, String data);
+String getEEPROMString(int offset);
+
+// LED settings
+#define NUM_LEDS 26
+#define DATA_PIN D4
+CRGB leds[NUM_LEDS];
+
+void setup() {
+  Serial.begin(BAUD_RATE);
+  EEPROM.begin(eepromSize);
+  storedSsid = getEEPROMString(ssidOffset);
+  storedPassword = getEEPROMString(passOffset);
+  storedLatitude = getEEPROMString(latOffset);
+  storedLongitude = getEEPROMString(lonOffset);
+  storedApiKey = getEEPROMString(apiKeyOffset);
+  WiFi.mode(WIFI_AP);
+
+  // Set up the LED strip
+  FastLED.addLeds<WS2812B, DATA_PIN, GRB>(leds, NUM_LEDS);  
+
+  // Check if Wi-Fi credentials are stored in EEPROM
+  String ssid = storedSsid;
+  String password = storedPassword;
+  if (ssid != "" && password != "") {
+    WiFi.begin(ssid.c_str(), password.c_str());
+    Serial.println("Connecting to Wi-Fi...");
+    int timeout = 0;
+    while (WiFi.status() != WL_CONNECTED && timeout < 30) {
+      delay(500);
+      Serial.print(".");
+      timeout++;
+    }
+    if (WiFi.status() == WL_CONNECTED) {
+      Serial.println("\nConnected to Wi-Fi!");
+    } else {
+      Serial.println("\nFailed to connect to Wi-Fi.");
+    }
+  }
+  
+  // Create access point with default credentials
+  WiFi.softAP(AP_SSID, AP_PASS);
+  Serial.println("Access point created.");
+
+  server.on("/", handleRoot);
+  server.on("/connect", HTTP_POST, handleConnect);
+  server.begin();
+  Serial.print("Access Point IP: ");
+  Serial.println(WiFi.softAPIP());
+}
+
+void loop() {
+  server.handleClient();
+
+  if (WiFi.status() == WL_CONNECTED) {
+    // Fetch weather data and print it to the serial monitor
+    fetchWeatherData();
+  }
+}
+
+void fetchWeatherData() {
+  
+  // Call weather API and print results to serial monitor
+  WiFiClientSecure client;
+  client.setInsecure();
+  HTTPClient http;
+  String url = "https://api.openweathermap.org/data/2.5/weather?lat=" + storedLatitude + "&lon=" + storedLongitude + "&appid=" + storedApiKey + "&units=imperial";
+  http.begin(client, url);
+  int httpCode = http.GET();
+  if (httpCode > 0) {
+    String payload = http.getString();
+    DynamicJsonDocument doc(1024);
+    deserializeJson(doc, payload);
+    float temperature = doc["main"]["temp"];
+    float pressure = doc["main"]["pressure"];
+    float windSpeed = doc["wind"]["speed"];
+    globalTemperature = temperature; // Update the global variable
+    setLeds();    
+    Serial.print("Temperature: ");
+    Serial.print(temperature);
+    Serial.println(" F");
+    Serial.print("Pressure: ");
+    Serial.print(pressure);
+    Serial.println(" hPa");
+    Serial.print("Wind Speed: ");
+    Serial.print(windSpeed);
+    Serial.println(" mph");
+    delay(requestInterval);    
+  } else {
+    Serial.println("Failed to get weather data");
+  }
+  http.end();
+}
+
+void setLeds() {
+  numLedsOn = constrain(map(globalTemperature, -30, 100, 0, NUM_LEDS), 0, NUM_LEDS);
+  Serial.print("Temperature: ");
+  Serial.print(globalTemperature);
+  Serial.print(" | Number of LEDs on: ");
+  Serial.println(numLedsOn);
+
+  for (int i = 0; i < numLedsOn; i++) {
+    int hue = map(globalTemperature, -30, 100, 0, 255);
+    leds[i] = CHSV(hue, 255, 255);
+  }
+
+  // Explicitly turn off the remaining LEDs
+  for (int i = numLedsOn; i < NUM_LEDS; i++) {
+    leds[i] = CRGB::Black;
+  }
+
+  FastLED.show();
+}
+
+
+
+void handleRoot() {
+  String ssid = storedSsid;
+  String password = storedPassword;
+  String latitude = storedLatitude;
+  String longitude = storedLongitude;
+  String apiKey = storedApiKey;
+
+  String html = "<!DOCTYPE html><html><head><title>ESP8266 Wi-Fi Configuration</title></head><body><h1>ESP8266 Wi-Fi Configuration</h1><form action='/connect' method='post'><label for='ssid'>SSID:</label><input type='text' name='ssid' id='ssid' value='";
+  html += ssid;
+  html += "' required><br><br><label for='password'>Password:</label><input type='password' name='password' id='password' value='";
+  html += password;
+  html += "' required><br><br><label for='latitude'>Latitude:</label><input type='text' name='latitude' id='latitude' value='";
+  html += latitude;
+  html += "' required><br><br><label for='longitude'>Longitude:</label><input type='text' name='longitude' id='longitude' value='";
+  html += longitude;
+  html += "' required><br><br><label for='apiKey'>OpenWeatherMap API Key:</label><input type='text' name='apiKey' id='apiKey' value='";
+  html += apiKey;
+  html += "' required><br><br><input type='submit' value='Change Credentials'></form></body></html>";
+  server.send(200, "text/html", html);
+}
+
+
+void handleConnect() {
+  String ssid = server.arg("ssid");
+  String password = server.arg("password");
+  String latitude = server.arg("latitude");
+  String longitude = server.arg("longitude");
+  String apiKey = server.arg("apiKey");
+
+  // Save the values to EEPROM
+  setEEPROMString(ssidOffset, ssid);
+  setEEPROMString(passOffset, password);
+  setEEPROMString(latOffset, latitude);
+  setEEPROMString(lonOffset, longitude);
+  setEEPROMString(apiKeyOffset, apiKey);
+
+  // Update global variables
+  storedSsid = ssid;
+  storedPassword = password;
+  storedLatitude = latitude;
+  storedLongitude = longitude;
+  storedApiKey = apiKey;
+
+
+  // Print a confirmation message
+  String html = "<!DOCTYPE html><html><head><title>ESP8266 Wi-Fi Configuration</title></head><body><h1>ESP8266 Wi-Fi Configuration</h1><p>Credentials updated!</p>";
+  html += "<p>SSID: " + ssid + "</p>";
+  html += "<p>Password: " + password + "</p>";
+  html += "<p>Latitude: " + latitude + "</p>";
+  html += "<p>Longitude: " + longitude + "</p>";
+  html += "<p>API Key: " + apiKey + "</p></body></html>";
+  server.send(200, "text/html", html);
+}
+
+
+void setEEPROMString(int offset, String data) {
+  for (int i = 0; i < data.length(); i++) {
+    EEPROM.write(offset + i, data[i]);
+  }
+  EEPROM.write(offset + data.length(), '\0');
+  EEPROM.commit();
+}
+
+
+String getEEPROMString(int offset) {
+  String data;
+  char c = EEPROM.read(offset);
+  int i = 0;
+  while (c != '\0' && i < 64) {
+    data += c;
+    i++;
+    c = EEPROM.read(offset + i);
+  }
+  return data;
+}
+
