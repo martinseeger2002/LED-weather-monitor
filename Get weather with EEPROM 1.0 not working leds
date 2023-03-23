@@ -14,7 +14,6 @@ String storedLongitude = "";
 String storedApiKey = "";
 
 const int requestInterval = 30000; // in milliseconds
-bool shouldFetchWeatherData = false;
 float globalTemperature = 0;
 int numLedsOn = 0;
 const char *AP_SSID = "weather station";
