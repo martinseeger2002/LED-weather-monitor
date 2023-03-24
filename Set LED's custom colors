@@ -1,0 +1,151 @@
+#include <ESP8266WiFi.h>
+#include <WiFiClient.h>
+#include <ESP8266WebServer.h>
+#include <FastLED.h>
+
+// WiFi settings
+const char* ssid = "control";
+const char* password = "12345678";
+
+// Web server settings
+ESP8266WebServer server(80);
+float ledPercentage = 0; // The percentage of LEDs to turn on, from -30 to 100
+int numLedsOn = 0; // The number of LEDs to turn on based on the percentage
+
+// LED settings
+#define NUM_LEDS 26
+#define DATA_PIN D4
+CRGB leds[NUM_LEDS];
+
+void setup() {
+  // Set up the serial connection
+  Serial.begin(9600);
+  
+  // Set up the LED strip
+  FastLED.addLeds<WS2812B, DATA_PIN, GRB>(leds, NUM_LEDS);
+
+  // Set up the WiFi access point
+  WiFi.softAP(ssid, password);
+  Serial.print("AP IP address: ");
+  Serial.println(WiFi.softAPIP());
+
+  // Set up the web server
+  server.on("/", handleRoot);
+  server.onNotFound(handleNotFound);
+  server.on("/submit", HTTP_POST, handlePost);
+  server.begin();
+  Serial.println("Web server started");
+}
+
+void loop() {
+  // Handle incoming web requests
+  server.handleClient();
+
+  // Convert the percentage to a number of LEDs to turn on
+  if (ledPercentage > 100) {
+    numLedsOn = NUM_LEDS;
+  } else {
+    numLedsOn = map(ledPercentage, -30, 100, 0, NUM_LEDS);
+  }
+
+  // Set the LED colors based on the number of LEDs to turn on
+  for (int i = 0; i < numLedsOn; i++) {
+    // Determine the color for this LED based on the LED percentage
+    CRGB color;
+    if (ledPercentage > 95) {
+      color = CRGB(140, 1, 1);
+    } else if (ledPercentage > 90) {
+      color = CRGB(180, 39, 3);
+    } else if (ledPercentage > 85) {
+      color = CRGB(220, 80, 4);
+    } else if (ledPercentage > 80) {
+      color = CRGB(240, 140, 18);
+    } else if (ledPercentage > 75) {
+      color = CRGB(247, 180, 41);
+    } else if (ledPercentage > 70) {
+      color = CRGB(245, 221, 90);
+    } else if (ledPercentage > 65) {
+      color = CRGB(249, 246, 115);
+    } else if (ledPercentage > 60) {
+      color = CRGB(250, 251, 160);
+    } else if (ledPercentage > 55) {
+      color = CRGB(180, 255, 181);
+    } else if (ledPercentage > 50) {
+      color = CRGB(140, 255, 140);
+    } else if (ledPercentage > 45) {
+      color = CRGB(100, 231, 100);
+    } else if (ledPercentage > 40) {
+      color = CRGB(62, 200, 5);
+    } else if (ledPercentage > 35) {
+      color = CRGB(50, 161, 49);
+    } else if (ledPercentage > 30) {
+      color = CRGB(33, 120, 2);
+    } else if (ledPercentage > 25) {
+      color = CRGB(150, 231, 254);
+    } else if (ledPercentage > 20) {
+      color = CRGB(65, 181, 253);
+    } else if (ledPercentage > 15) {
+      color = CRGB(50, 140, 240);
+    } else if (ledPercentage > 10) {
+      color = CRGB(35, 60, 253);
+    } else if (ledPercentage > 5) {
+      color = CRGB(20, 0, 200);
+    } else if (ledPercentage > 0) {
+      color = CRGB(12, 0, 150);
+    } else if (ledPercentage > -5) {
+      color = CRGB(140, 1, 175);
+    } else if (ledPercentage > -10) {
+      color = CRGB(177, 100, 192);
+    } else if (ledPercentage > -15) {
+      color = CRGB(255, 4, 226);
+    } else if (ledPercentage > -20) {
+      color = CRGB(246, 100, 253);
+    } else if (ledPercentage > -25) {
+      color = CRGB(250, 200, 254);
+    } else if (ledPercentage > -30) {
+      color = CRGB(253, 230, 255);
+    } else {
+      color = CRGB(255, 255, 255);
+    }
+
+  // Set the color for this LED
+  leds[i] = color;}
+
+  // Set the remaining LEDs to black
+  for (int i = numLedsOn; i < NUM_LEDS; i++) {
+  leds[i] = CRGB::Black;
+  }
+
+  // Update the LED strip
+  FastLED.show();
+}
+  
+
+
+
+// Handle the root page
+void handleRoot() {
+  String html = "<html><body>";
+  html += "<h1>LED Percentage</h1>";
+  html += "<form method=\"POST\" action=\"/submit\">";
+  html += "<input type=\"text\" name=\"percentage\">";
+  html += "<input type=\"submit\" value=\"Submit\">";
+  html += "</form>";
+  html += "</body></html>";
+  server.send(200, "text/html", html);
+}
+
+// Handle 404 not found errors
+void handleNotFound() {
+  server.send(404, "text/plain", "Not found");
+}
+
+// Handle incoming POST requests
+void handlePost() {
+  if (server.arg("percentage") != "") {
+    ledPercentage = server.arg("percentage").toFloat();
+    Serial.print("LED Percentage: ");
+    Serial.println(ledPercentage);
+  }
+  server.send(200, "text/plain", "OK");
+}
