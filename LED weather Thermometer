@@ -13,8 +13,8 @@ String storedLatitude = "";
 String storedLongitude = "";
 String storedApiKey = "";
 
-const int requestInterval = 30000; // in milliseconds
-float globalTemperature = 0;
+const int requestInterval = 900000; // in milliseconds
+float temperature = 0;
 int numLedsOn = 0;
 const char *AP_SSID = "weather station";
 const char *AP_PASS = "12345678";
@@ -37,7 +37,7 @@ String getEEPROMString(int offset);
 
 // LED settings
 #define NUM_LEDS 26
-#define DATA_PIN D4
+#define DATA_PIN D8
 CRGB leds[NUM_LEDS];
 
 void setup() {
@@ -85,67 +85,116 @@ void setup() {
 
 void loop() {
   server.handleClient();
+  fetchWeatherData();  
+  setLeds();
+  FastLED.show();
+  delay(50);
+  setLeds();
+  FastLED.show();
+  delay(requestInterval);
 
-  if (WiFi.status() == WL_CONNECTED) {
-    // Fetch weather data and print it to the serial monitor
-    fetchWeatherData();
-  }
 }
 
+
+
 void fetchWeatherData() {
-  
-  // Call weather API and print results to serial monitor
   WiFiClientSecure client;
   client.setInsecure();
   HTTPClient http;
   String url = "https://api.openweathermap.org/data/2.5/weather?lat=" + storedLatitude + "&lon=" + storedLongitude + "&appid=" + storedApiKey + "&units=imperial";
   http.begin(client, url);
   int httpCode = http.GET();
-  if (httpCode > 0) {
-    String payload = http.getString();
-    DynamicJsonDocument doc(1024);
-    deserializeJson(doc, payload);
-    float temperature = doc["main"]["temp"];
-    float pressure = doc["main"]["pressure"];
-    float windSpeed = doc["wind"]["speed"];
-    globalTemperature = temperature; // Update the global variable
-    setLeds();    
-    Serial.print("Temperature: ");
-    Serial.print(temperature);
-    Serial.println(" F");
-    Serial.print("Pressure: ");
-    Serial.print(pressure);
-    Serial.println(" hPa");
-    Serial.print("Wind Speed: ");
-    Serial.print(windSpeed);
-    Serial.println(" mph");
-    delay(requestInterval);    
+  if (httpCode == HTTP_CODE_OK) {
+    DynamicJsonDocument doc(2048);
+    DeserializationError error = deserializeJson(doc, http.getString());
+    if (!error) {
+      temperature = doc["main"]["temp"];
+      Serial.println("Temperature: " + String(temperature) + " degrees Celsius");
+    } else {
+      Serial.println("Failed to parse weather data: " + String(error.c_str()));
+    }
   } else {
-    Serial.println("Failed to get weather data");
+    Serial.println("Failed to fetch weather data: HTTP error code " + String(httpCode));
   }
   http.end();
 }
 
 void setLeds() {
-  numLedsOn = constrain(map(globalTemperature, -30, 100, 0, NUM_LEDS), 0, NUM_LEDS);
-  Serial.print("Temperature: ");
-  Serial.print(globalTemperature);
-  Serial.print(" | Number of LEDs on: ");
-  Serial.println(numLedsOn);
+  // Convert the percentage to a number of LEDs to turn on
+  if (temperature > 100) {
+    numLedsOn = NUM_LEDS;
+  } else {
+    numLedsOn = map(temperature, -30, 100, 0, NUM_LEDS);
+  }
 
+  // Set the LED colors based on the number of LEDs to turn on
   for (int i = 0; i < numLedsOn; i++) {
-    int hue = map(globalTemperature, -30, 100, 0, 255);
-    leds[i] = CHSV(hue, 255, 255);
-  }
+    // Determine the color for this LED based on the LED percentage
+    CRGB color;
+    if (temperature > 95) {
+      color = CRGB(140, 1, 1);
+    } else if (temperature > 90) {
+      color = CRGB(180, 39, 3);
+    } else if (temperature > 85) {
+      color = CRGB(220, 80, 4);
+    } else if (temperature > 80) {
+      color = CRGB(240, 140, 18);
+    } else if (temperature > 75) {
+      color = CRGB(247, 180, 41);
+    } else if (temperature > 70) {
+      color = CRGB(245, 221, 90);
+    } else if (temperature > 65) {
+      color = CRGB(249, 246, 115);
+    } else if (temperature > 60) {
+      color = CRGB(250, 251, 160);
+    } else if (temperature > 55) {
+      color = CRGB(180, 255, 181);
+    } else if (temperature > 50) {
+      color = CRGB(140, 255, 140);
+    } else if (temperature > 45) {
+      color = CRGB(100, 231, 100);
+    } else if (temperature > 40) {
+      color = CRGB(62, 200, 5);
+    } else if (temperature > 35) {
+      color = CRGB(50, 161, 49);
+    } else if (temperature > 30) {
+      color = CRGB(33, 120, 2);
+    } else if (temperature > 25) {
+      color = CRGB(150, 231, 254);
+    } else if (temperature > 20) {
+      color = CRGB(65, 181, 253);
+    } else if (temperature > 15) {
+      color = CRGB(50, 140, 240);
+    } else if (temperature > 10) {
+      color = CRGB(35, 60, 253);
+    } else if (temperature > 5) {
+      color = CRGB(20, 0, 200);
+    } else if (temperature > 0) {
+      color = CRGB(12, 0, 150);
+    } else if (temperature > -5) {
+      color = CRGB(140, 1, 175);
+    } else if (temperature > -10) {
+      color = CRGB(177, 100, 192);
+    } else if (temperature > -15) {
+      color = CRGB(255, 4, 226);
+    } else if (temperature > -20) {
+      color = CRGB(246, 100, 253);
+    } else if (temperature > -25) {
+      color = CRGB(250, 200, 254);
+    } else if (temperature > -30) {
+      color = CRGB(253, 230, 255);
+    } else {
+      color = CRGB(255, 255, 255);
+    }
 
-  // Explicitly turn off the remaining LEDs
+  // Set the color for this LED
+  leds[i] = color;}
+
+  // Set the remaining LEDs to black
   for (int i = numLedsOn; i < NUM_LEDS; i++) {
-    leds[i] = CRGB::Black;
+  leds[i] = CRGB::Black;
   }
-
-  FastLED.show();
 }
-
 
 
 void handleRoot() {
@@ -223,4 +272,3 @@ String getEEPROMString(int offset) {
   }
   return data;
 }
-
