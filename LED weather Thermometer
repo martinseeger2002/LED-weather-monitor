@@ -37,7 +37,7 @@ String getEEPROMString(int offset);
 
 // LED settings
 #define NUM_LEDS 26
-#define DATA_PIN D8
+#define DATA_PIN D3
 CRGB leds[NUM_LEDS];
 
 void setup() {
