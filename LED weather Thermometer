@@ -85,15 +85,19 @@ void setup() {
 
 void loop() {
   server.handleClient();
-  fetchWeatherData();  
-  setLeds();
-  FastLED.show();
-  delay(50);
-  setLeds();
-  FastLED.show();
-  delay(requestInterval);
+  if (WiFi.status() == WL_CONNECTED) {
+    fetchWeatherData();  
+    setLeds();
+    FastLED.show();
+    delay(50);
+    setLeds();
+    FastLED.show();
+    delay(requestInterval);
+  }
+
 
 }
+
 
 
 
