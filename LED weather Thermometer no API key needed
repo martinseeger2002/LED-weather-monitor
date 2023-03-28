@@ -102,7 +102,7 @@ void fetchWeatherData() {
   WiFiClientSecure client;
   client.setInsecure();
   HTTPClient http;
-  String url = "https://api.open-meteo.com/v1/forecast?latitude=" + storedLatitude + "&longitude=" + storedLongitude + "&hourly=temperature_2m&current_weather=true&temperature_unit=fahrenheit";
+  String url = "https://api.open-meteo.com/v1/forecast?latitude=" + storedLatitude + "&longitude=" + storedLongitude + "&current_weather=true&temperature_unit=fahrenheit";
   http.begin(client, url);
   int httpCode = http.GET();
   if (httpCode == HTTP_CODE_OK) {
@@ -119,6 +119,7 @@ void fetchWeatherData() {
   }
   http.end();
 }
+
 
 
 void setLeds() {
