@@ -1,0 +1,272 @@
+#include <ESP8266WiFi.h>
+#include <ESP8266WebServer.h>
+#include <WiFiClientSecure.h>
+#include <ESP8266HTTPClient.h>
+#include <EEPROM.h>
+#include <ArduinoJson.h>
+#include <FastLED.h>
+
+
+String storedSsid = "";
+String storedPassword = "";
+String storedLatitude = "";
+String storedLongitude = "";
+
+
+const int requestInterval = 900000; // in milliseconds
+float temperature = 0;
+int numLedsOn = 0;
+const char *AP_SSID = "weather station";
+const char *AP_PASS = "12345678";
+
+ESP8266WebServer server(80);
+
+const int eepromSize = 512;
+const int ssidOffset = 0;
+const int passOffset = 64;
+const int latOffset = 128;
+const int lonOffset = 192;
+
+const int BAUD_RATE = 9600;
+
+void handleRoot();
+void handleConnect();
+void setEEPROMString(int offset, String data);
+String getEEPROMString(int offset);
+
+// LED settings
+#define NUM_LEDS 26
+#define DATA_PIN D3
+CRGB leds[NUM_LEDS];
+
+void setup() {
+  Serial.begin(BAUD_RATE);
+  EEPROM.begin(eepromSize);
+  storedSsid = getEEPROMString(ssidOffset);
+  storedPassword = getEEPROMString(passOffset);
+  storedLatitude = getEEPROMString(latOffset);
+  storedLongitude = getEEPROMString(lonOffset);
+  WiFi.mode(WIFI_AP);
+
+  // Set up the LED strip
+  FastLED.addLeds<WS2812B, DATA_PIN, GRB>(leds, NUM_LEDS);  
+
+  // Check if Wi-Fi credentials are stored in EEPROM
+  String ssid = storedSsid;
+  String password = storedPassword;
+  if (ssid != "" && password != "") {
+    WiFi.begin(ssid.c_str(), password.c_str());
+    Serial.println("Connecting to Wi-Fi...");
+    int timeout = 0;
+    while (WiFi.status() != WL_CONNECTED && timeout < 30) {
+      delay(500);
+      Serial.print(".");
+      timeout++;
+    }
+    if (WiFi.status() == WL_CONNECTED) {
+      Serial.println("\nConnected to Wi-Fi!");
+    } else {
+      Serial.println("\nFailed to connect to Wi-Fi.");
+    }
+  }
+  
+  // Create access point with default credentials
+  WiFi.softAP(AP_SSID, AP_PASS);
+  Serial.println("Access point created.");
+
+  server.on("/", handleRoot);
+  server.on("/connect", HTTP_POST, handleConnect);
+  server.begin();
+  Serial.print("Access Point IP: ");
+  Serial.println(WiFi.softAPIP());
+}
+
+void loop() {
+  server.handleClient();
+  if (WiFi.status() == WL_CONNECTED) {
+    fetchWeatherData();  
+    setLeds();
+    FastLED.show();
+    delay(50);
+    setLeds();
+    FastLED.show();
+    delay(requestInterval);
+  }
+
+
+}
+
+
+
+void fetchWeatherData() {
+  WiFiClientSecure client;
+  client.setInsecure();
+  HTTPClient http;
+  String url = "https://api.open-meteo.com/v1/forecast?latitude=" + storedLatitude + "&longitude=" + storedLongitude + "&hourly=temperature_2m&current_weather=true&temperature_unit=fahrenheit";
+  http.begin(client, url);
+  int httpCode = http.GET();
+  if (httpCode == HTTP_CODE_OK) {
+    DynamicJsonDocument doc(2048);
+    DeserializationError error = deserializeJson(doc, http.getString());
+    if (!error) {
+      temperature = doc["current_weather"]["temperature"];
+      Serial.println("Temperature: " + String(temperature) + " degrees Fahrenheit");
+    } else {
+      Serial.println("Failed to parse weather data: " + String(error.c_str()));
+    }
+  } else {
+    Serial.println("Failed to fetch weather data: HTTP error code " + String(httpCode));
+  }
+  http.end();
+}
+
+
+void setLeds() {
+  // Convert the percentage to a number of LEDs to turn on
+  if (temperature > 100) {
+    numLedsOn = NUM_LEDS;
+  } else {
+    numLedsOn = map(temperature, -30, 100, 0, NUM_LEDS);
+  }
+
+  // Set the LED colors based on the number of LEDs to turn on
+  for (int i = 0; i < numLedsOn; i++) {
+    // Determine the color for this LED based on the LED percentage
+    CRGB color;
+    if (temperature > 95) {
+      color = CRGB(140, 1, 1);
+    } else if (temperature > 90) {
+      color = CRGB(180, 39, 3);
+    } else if (temperature > 85) {
+      color = CRGB(220, 80, 4);
+    } else if (temperature > 80) {
+      color = CRGB(240, 140, 18);
+    } else if (temperature > 75) {
+      color = CRGB(247, 180, 41);
+    } else if (temperature > 70) {
+      color = CRGB(245, 221, 90);
+    } else if (temperature > 65) {
+      color = CRGB(249, 246, 115);
+    } else if (temperature > 60) {
+      color = CRGB(250, 251, 160);
+    } else if (temperature > 55) {
+      color = CRGB(180, 255, 181);
+    } else if (temperature > 50) {
+      color = CRGB(140, 255, 140);
+    } else if (temperature > 45) {
+      color = CRGB(100, 231, 100);
+    } else if (temperature > 40) {
+      color = CRGB(62, 200, 5);
+    } else if (temperature > 35) {
+      color = CRGB(50, 161, 49);
+    } else if (temperature > 30) {
+      color = CRGB(33, 120, 2);
+    } else if (temperature > 25) {
+      color = CRGB(150, 231, 254);
+    } else if (temperature > 20) {
+      color = CRGB(65, 181, 253);
+    } else if (temperature > 15) {
+      color = CRGB(50, 140, 240);
+    } else if (temperature > 10) {
+      color = CRGB(35, 60, 253);
+    } else if (temperature > 5) {
+      color = CRGB(20, 0, 200);
+    } else if (temperature > 0) {
+      color = CRGB(12, 0, 150);
+    } else if (temperature > -5) {
+      color = CRGB(140, 1, 175);
+    } else if (temperature > -10) {
+      color = CRGB(177, 100, 192);
+    } else if (temperature > -15) {
+      color = CRGB(255, 4, 226);
+    } else if (temperature > -20) {
+      color = CRGB(246, 100, 253);
+    } else if (temperature > -25) {
+      color = CRGB(250, 200, 254);
+    } else if (temperature > -30) {
+      color = CRGB(253, 230, 255);
+    } else {
+      color = CRGB(255, 255, 255);
+    }
+
+  // Set the color for this LED
+  leds[i] = color;}
+
+  // Set the remaining LEDs to black
+  for (int i = numLedsOn; i < NUM_LEDS; i++) {
+  leds[i] = CRGB::Black;
+  }
+}
+
+
+void handleRoot() {
+  String ssid = storedSsid;
+  String password = storedPassword;
+  String latitude = storedLatitude;
+  String longitude = storedLongitude;
+
+  String html = "<!DOCTYPE html><html><head><title>ESP8266 Wi-Fi Configuration</title></head><body><h1>ESP8266 Wi-Fi Configuration</h1><form action='/connect' method='post'><label for='ssid'>SSID:</label><input type='text' name='ssid' id='ssid' value='";
+  html += ssid;
+  html += "' required><br><br><label for='password'>Password:</label><input type='password' name='password' id='password' value='";
+  html += password;
+  html += "' required><br><br><label for='latitude'>Latitude:</label><input type='text' name='latitude' id='latitude' value='";
+  html += latitude;
+  html += "' required><br><br><label for='longitude'>Longitude:</label><input type='text' name='longitude' id='longitude' value='";
+  html += longitude;
+  html += "' required><br><br><input type='submit' value='Change Credentials'></form></body></html>";
+  server.send(200, "text/html", html);
+}
+
+
+void handleConnect() {
+  String ssid = server.arg("ssid");
+  String password = server.arg("password");
+  String latitude = server.arg("latitude");
+  String longitude = server.arg("longitude");
+
+
+  // Save the values to EEPROM
+  setEEPROMString(ssidOffset, ssid);
+  setEEPROMString(passOffset, password);
+  setEEPROMString(latOffset, latitude);
+  setEEPROMString(lonOffset, longitude);
+
+
+  // Update global variables
+  storedSsid = ssid;
+  storedPassword = password;
+  storedLatitude = latitude;
+  storedLongitude = longitude;
+
+
+
+  // Print a confirmation message
+  String html = "<!DOCTYPE html><html><head><title>ESP8266 Wi-Fi Configuration</title></head><body><h1>ESP8266 Wi-Fi Configuration</h1><p>Credentials updated!</p>";
+  html += "<p>SSID: " + ssid + "</p>";
+  html += "<p>Password: " + password + "</p>";
+  html += "<p>Latitude: " + latitude + "</p>";
+  html += "<p>Longitude: " + longitude + "</p></body></html>";
+  server.send(200, "text/html", html);
+}
+
+
+void setEEPROMString(int offset, String data) {
+  for (int i = 0; i < data.length(); i++) {
+    EEPROM.write(offset + i, data[i]);
+  }
+  EEPROM.write(offset + data.length(), '\0');
+  EEPROM.commit();
+}
+
+
+String getEEPROMString(int offset) {
+  String data;
+  char c = EEPROM.read(offset);
+  int i = 0;
+  while (c != '\0' && i < 64) {
+    data += c;
+    i++;
+    c = EEPROM.read(offset + i);
+  }
+  return data;
+}
