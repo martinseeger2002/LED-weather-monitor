@@ -113,7 +113,7 @@ void fetchWeatherData() {
     DeserializationError error = deserializeJson(doc, http.getString());
     if (!error) {
       temperature = doc["main"]["temp"];
-      Serial.println("Temperature: " + String(temperature) + " degrees Celsius");
+      Serial.println("Temperature: " + String(temperature) + " degrees Fahrenheit");
     } else {
       Serial.println("Failed to parse weather data: " + String(error.c_str()));
     }
